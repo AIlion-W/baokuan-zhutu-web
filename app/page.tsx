@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import * as relay from "@/lib/relay";
 
 type TriItem = {
   form_code: string;
@@ -101,14 +102,6 @@ export default function Home() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
   };
 
-  const apiHeaders = (): Record<string, string> => ({
-    "Content-Type": "application/json",
-    "x-user-base-url": settings.baseURL,
-    "x-user-api-key": settings.apiKey,
-    "x-user-claude-model": settings.claudeModel,
-    "x-user-image-model": settings.imageModel,
-  });
-
   const ensureKey = (): boolean => {
     if (!settings.apiKey || !settings.baseURL) {
       setError("请先在右上角「设置」填写 API Base URL 和 Key");
@@ -137,14 +130,8 @@ export default function Home() {
     setLoading("正在拆解三要素…");
     setError(null);
     try {
-      const r = await fetch("/api/analyze", {
-        method: "POST",
-        headers: apiHeaders(),
-        body: JSON.stringify({ image }),
-      });
-      const j = await r.json();
-      if (!r.ok) throw new Error(j.error || "拆解失败");
-      setAnalysis(j.analysis);
+      const result = (await relay.analyze(settings, image)) as Analysis;
+      setAnalysis(result);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -159,14 +146,8 @@ export default function Home() {
     setPlans(null);
     setResults({});
     try {
-      const r = await fetch("/api/expand", {
-        method: "POST",
-        headers: apiHeaders(),
-        body: JSON.stringify({ analysis, direction, count }),
-      });
-      const j = await r.json();
-      if (!r.ok) throw new Error(j.error || "裂变失败");
-      setPlans(j.plans);
+      const result = (await relay.expand(settings, analysis, direction, count)) as Plan[];
+      setPlans(result);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -180,19 +161,13 @@ export default function Home() {
 
   const generateOne = async (plan: Plan) => {
     if (!ensureKey()) return;
-    setLoading(`正在生成方案 #${plan.index} 的图片…`);
+    setLoading(`正在生成方案 #${plan.index} 的图片…（首次较慢可达 1-3 分钟）`);
     setError(null);
     try {
-      const r = await fetch("/api/generate", {
-        method: "POST",
-        headers: apiHeaders(),
-        body: JSON.stringify({ prompt: plan.image_prompt, referenceImage: image }),
-      });
-      const j = await r.json();
-      if (!r.ok) throw new Error(j.error || "生图失败");
-      setResults((prev) => ({ ...prev, [plan.index]: j.image }));
+      const url = await relay.generate(settings, plan.image_prompt, image);
+      setResults((prev) => ({ ...prev, [plan.index]: url }));
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(`方案 #${plan.index}: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setLoading(null);
     }
@@ -409,7 +384,7 @@ export default function Home() {
         )}
 
         <footer className="mt-16 text-xs text-neutral-400 text-center">
-          API Key 仅保存在你浏览器的 localStorage，不会上传到任何服务器（每次请求由浏览器直接带给后端转发到中转）。
+          API Key 仅保存在你浏览器 localStorage。浏览器直连中转，无 Vercel 中转层（无超时、无 4.5MB 上限）。
         </footer>
       </div>
     </div>
