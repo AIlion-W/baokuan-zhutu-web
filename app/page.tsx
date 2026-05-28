@@ -57,13 +57,13 @@ type Settings = {
 };
 
 const DEFAULT_SETTINGS: Settings = {
-  baseURL: "https://api.evolink.ai",
+  baseURL: "https://yunwu.ai",
   apiKey: "",
-  claudeModel: "claude-sonnet-4-6",
-  imageModel: "gpt-image-1.5",
+  claudeModel: "claude-opus-4-7",
+  imageModel: "gpt-5.5",
 };
 
-const STORAGE_KEY = "baokuan-zhutu-settings-v1";
+const STORAGE_KEY = "baokuan-zhutu-settings-v3";
 
 export default function Home() {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
@@ -447,13 +447,13 @@ function SettingsPanel({
           label="Claude 模型（拆解 + 裂变）"
           value={draft.claudeModel}
           onChange={(v) => setDraft({ ...draft, claudeModel: v })}
-          placeholder="claude-sonnet-4-6"
+          placeholder="claude-opus-4-7"
         />
         <Input
           label="生图模型"
           value={draft.imageModel}
           onChange={(v) => setDraft({ ...draft, imageModel: v })}
-          placeholder="gpt-image-1.5"
+          placeholder="gpt-5.5"
         />
       </div>
       <div className="mt-5 flex justify-end gap-3">

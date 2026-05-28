@@ -70,8 +70,8 @@ export type UserConfig = {
 export function readUserConfig(headers: Headers): UserConfig {
   const baseURL = headers.get("x-user-base-url") || "";
   const apiKey = headers.get("x-user-api-key") || "";
-  const claudeModel = headers.get("x-user-claude-model") || "claude-sonnet-4-6";
-  const imageModel = headers.get("x-user-image-model") || "gpt-image-1.5";
+  const claudeModel = headers.get("x-user-claude-model") || "claude-opus-4-7";
+  const imageModel = headers.get("x-user-image-model") || "gpt-5.5";
   if (!baseURL || !apiKey) {
     throw new Error("缺少 API 配置：请在页面顶部填写 Base URL 和 API Key");
   }

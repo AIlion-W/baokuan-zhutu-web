@@ -14,10 +14,10 @@
 
 打开网站右上角「⚙️ 设置」填写：
 
-- **Base URL** — 中转站根地址（如 `https://api.evolink.ai`）
-- **API Key** — 中转站 key
-- **Claude 模型** — 默认 `claude-sonnet-4-6`（拆解 + 裂变）
-- **生图模型** — 默认 `gpt-image-1.5`
+- **Base URL** — 中转站根地址（默认 `https://yunwu.ai`，不带 `/v1`）
+- **API Key** — 中转站 key，去 https://yunwu.ai/console/token 创建
+- **Claude 模型** — 默认 `claude-opus-4-7`（拆解 + 裂变）
+- **生图模型** — 默认 `gpt-5.5`
 
 API Key 只保存在浏览器 `localStorage`，每次请求由浏览器 header 传给后端，后端转发到中转站，不落库。
 
@@ -40,5 +40,5 @@ vercel --prod
 
 - Next.js 16 (App Router, Turbopack)
 - Tailwind v4
-- Claude Sonnet 4.6 (Vision) — 拆解 + 裂变
-- gpt-image-1.5 — 生图
+- Claude Opus 4.7 (Vision) — 拆解 + 裂变
+- gpt-5.5 — 生图
