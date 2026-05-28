@@ -57,7 +57,60 @@ export async function POST(req: NextRequest) {
 
     const base = cfg.baseURL.replace(/\/$/, "");
 
-    // 有参考图 → 走 chat completions 多模态（nano-banana / gemini-image 系标准接法）
+    // 有参考图 + gpt-image 系列 → 走 OpenAI /v1/images/edits（multipart）
+    if (referenceImage && /^gpt-image/i.test(cfg.imageModel)) {
+      const m = referenceImage.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
+      if (!m) return NextResponse.json({ error: "参考图格式错误" }, { status: 400 });
+      const buf = Buffer.from(m[2], "base64");
+      const blob = new Blob([new Uint8Array(buf)], { type: m[1] });
+      const form = new FormData();
+      form.append("model", cfg.imageModel);
+      form.append("prompt", prompt);
+      form.append("n", "1");
+      form.append("size", size);
+      form.append("image", blob, "reference.png");
+
+      const editResp = await fetch(`${base}/v1/images/edits`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${cfg.apiKey}` },
+        body: form,
+      });
+      const editJson = await editResp.json();
+      if (!editResp.ok) {
+        return NextResponse.json(
+          { error: editJson?.error?.message || `生图失败 HTTP ${editResp.status}`, raw: editJson },
+          { status: 500 },
+        );
+      }
+      if (editJson?.data?.[0]?.url) return NextResponse.json({ image: editJson.data[0].url });
+      if (editJson?.data?.[0]?.b64_json)
+        return NextResponse.json({ image: `data:image/png;base64,${editJson.data[0].b64_json}` });
+
+      // 异步任务
+      const taskId = editJson?.id;
+      if (taskId) {
+        const deadline = Date.now() + 270_000;
+        while (Date.now() < deadline) {
+          await sleep(3000);
+          const pollResp = await fetch(`${base}/v1/tasks/${taskId}`, {
+            headers: { Authorization: `Bearer ${cfg.apiKey}` },
+          });
+          const poll = await pollResp.json();
+          const st = poll?.status;
+          if (st === "completed" || st === "succeeded" || st === "success") {
+            const url = poll?.result_data?.[0]?.url || poll?.results?.[0];
+            if (url) return NextResponse.json({ image: url });
+          }
+          if (st === "failed" || st === "error") {
+            return NextResponse.json({ error: poll?.error?.message || "生图失败", raw: poll }, { status: 500 });
+          }
+        }
+        return NextResponse.json({ error: "生图超时" }, { status: 504 });
+      }
+      return NextResponse.json({ error: "未拿到图片", raw: editJson }, { status: 500 });
+    }
+
+    // 有参考图 + 其他模型 → 走 chat completions 多模态（nano-banana / gemini-image 系标准接法）
     if (referenceImage) {
       const chatResp = await fetch(`${base}/v1/chat/completions`, {
         method: "POST",

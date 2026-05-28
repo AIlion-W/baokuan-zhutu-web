@@ -61,10 +61,10 @@ const DEFAULT_SETTINGS: Settings = {
   baseURL: "https://yunwu.ai",
   apiKey: "",
   claudeModel: "claude-opus-4-7",
-  imageModel: "gemini-2.5-flash-image",
+  imageModel: "gpt-image-2",
 };
 
-const STORAGE_KEY = "baokuan-zhutu-settings-v5";
+const STORAGE_KEY = "baokuan-zhutu-settings-v6";
 
 export default function Home() {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
@@ -460,7 +460,7 @@ function SettingsPanel({
           label="生图模型"
           value={draft.imageModel}
           onChange={(v) => setDraft({ ...draft, imageModel: v })}
-          placeholder="gemini-2.5-flash-image"
+          placeholder="gpt-image-2"
         />
       </div>
       <div className="mt-5 flex justify-end gap-3">
