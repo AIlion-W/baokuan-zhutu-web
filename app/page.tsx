@@ -21,6 +21,7 @@ type Analysis = {
   formula: string;
   key_success: string;
   category_guess: string;
+  subject_lock?: string;
 };
 
 type Plan = {
@@ -60,10 +61,10 @@ const DEFAULT_SETTINGS: Settings = {
   baseURL: "https://yunwu.ai",
   apiKey: "",
   claudeModel: "claude-opus-4-7",
-  imageModel: "gpt-image-2",
+  imageModel: "gemini-2.5-flash-image",
 };
 
-const STORAGE_KEY = "baokuan-zhutu-settings-v4";
+const STORAGE_KEY = "baokuan-zhutu-settings-v5";
 
 export default function Home() {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
@@ -185,7 +186,7 @@ export default function Home() {
       const r = await fetch("/api/generate", {
         method: "POST",
         headers: apiHeaders(),
-        body: JSON.stringify({ prompt: plan.image_prompt }),
+        body: JSON.stringify({ prompt: plan.image_prompt, referenceImage: image }),
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || "生图失败");
@@ -280,6 +281,12 @@ export default function Home() {
               <Field label="核心公式" value={analysis.formula} mono />
               <Field label="成功关键" value={analysis.key_success} />
               <Field label="品类推测" value={analysis.category_guess} />
+              {analysis.subject_lock && (
+                <div className="rounded-lg border-2 border-amber-300 bg-amber-50 p-3">
+                  <div className="text-xs text-amber-700 font-semibold mb-1">🔒 像素级保留（裂变时不可改变）</div>
+                  <div className="text-sm text-amber-900">{analysis.subject_lock}</div>
+                </div>
+              )}
               <div className="grid md:grid-cols-3 gap-4 pt-2">
                 <TriCard title="场景" item={analysis.scene} />
                 <TriCard title="人群" item={analysis.people} />
@@ -453,7 +460,7 @@ function SettingsPanel({
           label="生图模型"
           value={draft.imageModel}
           onChange={(v) => setDraft({ ...draft, imageModel: v })}
-          placeholder="gpt-image-2"
+          placeholder="gemini-2.5-flash-image"
         />
       </div>
       <div className="mt-5 flex justify-end gap-3">

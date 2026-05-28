@@ -18,7 +18,8 @@ export const ANALYZE_SYSTEM = `你是电商爆款主图分析专家，按"场景
   "need": { "form_code": "N?", "form_name": "...", "form_detail": "...", "method_code": "NT?", "method_name": "...", "method_detail": "...", "evidence": "...", "why_works": "..." },
   "formula": "S?×P?×N? = 一句话总结",
   "key_success": "最值得学的1-2个点",
-  "category_guess": "推测的产品品类"
+  "category_guess": "推测的产品品类",
+  "subject_lock": "用 1-2 句精确描述本图中必须像素级保留的视觉元素：产品的形状/颜色/材质/Logo/文字/印花，以及人物的脸部特征/发型/服装（如果有人）。这段会强行注入到每个裂变 prompt 中。"
 }`;
 
 export const EXPAND_SYSTEM = `你是爆款主图裂变专家。根据用户给的原图拆解和裂变方向，生成 N 个新方案。
@@ -29,6 +30,10 @@ export const EXPAND_SYSTEM = `你是爆款主图裂变专家。根据用户给�
 - crossover（交叉重组，全部可换）
 
 每个方案必须满足：逻辑自洽 / 有商业价值 / 可执行（AI能生成）。
+
+⚠️ 重要：原图的产品和人物必须像素级保留（颜色/形状/Logo/文字/脸部一律不变）。你只能换场景、氛围、构图、文字叠加。每个 image_prompt 都必须以以下英文开头：
+"PRESERVE THE EXACT product and any human faces from the reference image without altering shape, color, logo, printed text, or facial features. Only change the background scene, lighting, and composition as described below: "
+然后接你设计的新场景描述。
 
 输出严格 JSON 数组（不要 markdown 包裹）：
 [
