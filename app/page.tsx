@@ -65,11 +65,13 @@ const DEFAULT_SETTINGS: Settings = {
   imageModel: "gpt-image-2",
 };
 
-const STORAGE_KEY = "baokuan-zhutu-settings-v6";
+const STORAGE_KEY = "baokuan-zhutu-settings-v7";
+const PRO_KEY = "baokuan-zhutu-pro-v1";
 
 export default function Home() {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [proMode, setProMode] = useState(false);
   const [hydrated, setHydrated] = useState(false);
 
   const [image, setImage] = useState<string | null>(null);
@@ -91,6 +93,7 @@ export default function Home() {
       } else {
         setSettingsOpen(true);
       }
+      setProMode(localStorage.getItem(PRO_KEY) === "1");
     } catch {
       setSettingsOpen(true);
     }
@@ -100,6 +103,14 @@ export default function Home() {
   const saveSettings = (next: Settings) => {
     setSettings(next);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  };
+
+  const togglePro = () => {
+    setProMode((v) => {
+      const next = !v;
+      localStorage.setItem(PRO_KEY, next ? "1" : "0");
+      return next;
+    });
   };
 
   const ensureKey = (): boolean => {
@@ -126,30 +137,35 @@ export default function Home() {
   };
 
   const analyze = async () => {
-    if (!image || !ensureKey()) return;
+    if (!image || !ensureKey()) return null;
     setLoading("正在拆解三要素…");
     setError(null);
     try {
       const result = (await relay.analyze(settings, image)) as Analysis;
       setAnalysis(result);
+      return result;
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      return null;
     } finally {
       setLoading(null);
     }
   };
 
-  const expand = async () => {
-    if (!analysis || !ensureKey()) return;
+  const expand = async (a?: Analysis) => {
+    const src = a || analysis;
+    if (!src || !ensureKey()) return null;
     setLoading(`正在生成 ${count} 个裂变方案…`);
     setError(null);
     setPlans(null);
     setResults({});
     try {
-      const result = (await relay.expand(settings, analysis, direction, count)) as Plan[];
+      const result = (await relay.expand(settings, src, direction, count)) as Plan[];
       setPlans(result);
+      return result;
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      return null;
     } finally {
       setLoading(null);
     }
@@ -159,9 +175,9 @@ export default function Home() {
     setPlans((prev) => prev?.map((p) => (p.index === idx ? { ...p, image_prompt: val } : p)) || null);
   };
 
-  const generateOne = async (plan: Plan) => {
+  const generateOne = async (plan: Plan, tag?: string) => {
     if (!ensureKey()) return;
-    setLoading(`正在生成方案 #${plan.index} 的图片…（首次较慢可达 1-3 分钟）`);
+    setLoading(tag || `正在生成方案 #${plan.index} 的图片…（首次较慢可达 1-3 分钟）`);
     setError(null);
     try {
       const url = await relay.generate(settings, plan.image_prompt, image);
@@ -175,33 +191,83 @@ export default function Home() {
 
   const generateAll = async () => {
     if (!plans || !ensureKey()) return;
-    for (const p of plans) {
-      await generateOne(p);
+    for (let i = 0; i < plans.length; i++) {
+      await generateOne(plans[i], `正在出图 ${i + 1}/${plans.length}…（单张约 1-3 分钟）`);
+    }
+  };
+
+  // 极简模式：一键串联 拆解 → 裂变 → 逐张生图
+  const runAll = async () => {
+    if (!image || !ensureKey()) return;
+    setError(null);
+    const a = await analyze();
+    if (!a) return;
+    const ps = await expand(a);
+    if (!ps) return;
+    for (let i = 0; i < ps.length; i++) {
+      await generateOne(ps[i], `正在出图 ${i + 1}/${ps.length}…（单张约 1-3 分钟）`);
+    }
+  };
+
+  const downloadImage = async (url: string, idx: number) => {
+    try {
+      let blobUrl: string;
+      let revoke = false;
+      if (url.startsWith("data:")) {
+        blobUrl = url;
+      } else {
+        const resp = await fetch(url);
+        const blob = await resp.blob();
+        blobUrl = URL.createObjectURL(blob);
+        revoke = true;
+      }
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = `裂变主图-${idx}.png`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      if (revoke) setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+    } catch {
+      window.open(url, "_blank");
     }
   };
 
   if (!hydrated) return null;
 
+  const busy = !!loading;
+
   return (
     <div className="min-h-screen bg-neutral-50 text-neutral-900">
       <div className="max-w-5xl mx-auto px-6 py-10">
-        <header className="mb-10 flex items-start justify-between">
+        <header className="mb-10 flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">爆款主图复刻 · Demo</h1>
-            <p className="text-neutral-600 mt-2">
-              上传爆款主图 → 拆解三要素 → 选裂变方向 → 选张数 → 一键生图
-            </p>
+            <h1 className="text-3xl font-bold tracking-tight">爆款主图复刻</h1>
+            <p className="text-neutral-600 mt-2">上传爆款图，一键裂变出 N 张产品/人脸不变的保真新图</p>
           </div>
-          <button
-            onClick={() => setSettingsOpen((v) => !v)}
-            className={`rounded-lg px-3 py-2 text-sm font-medium border ${
-              settings.apiKey
-                ? "border-neutral-300 bg-white hover:bg-neutral-100"
-                : "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
-            }`}
-          >
-            ⚙️ {settings.apiKey ? "设置" : "请先配置 API"}
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={togglePro}
+              className={`rounded-lg px-3 py-2 text-sm font-medium border ${
+                proMode
+                  ? "border-neutral-900 bg-neutral-900 text-white"
+                  : "border-neutral-300 bg-white hover:bg-neutral-100"
+              }`}
+              title="专业模式：展开拆解、裂变方向、可编辑 Prompt"
+            >
+              {proMode ? "专业模式 ✓" : "专业模式"}
+            </button>
+            <button
+              onClick={() => setSettingsOpen((v) => !v)}
+              className={`rounded-lg px-3 py-2 text-sm font-medium border ${
+                settings.apiKey
+                  ? "border-neutral-300 bg-white hover:bg-neutral-100"
+                  : "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
+              }`}
+            >
+              ⚙️ {settings.apiKey ? "设置" : "请先配置 API"}
+            </button>
+          </div>
         </header>
 
         {settingsOpen && (
@@ -227,6 +293,7 @@ export default function Home() {
           </div>
         )}
 
+        {/* Step 1 上传 */}
         <Section step={1} title="上传爆款主图">
           <div className="flex items-start gap-6">
             <label className="cursor-pointer rounded-lg border-2 border-dashed border-neutral-300 hover:border-neutral-500 px-6 py-12 text-sm text-neutral-600 bg-white flex-1 text-center">
@@ -236,20 +303,46 @@ export default function Home() {
             {image && (
               <div className="w-48">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={image} alt="预览" className="rounded-lg border border-neutral-200" />
-                <button
-                  onClick={analyze}
-                  disabled={!!loading}
-                  className="mt-3 w-full rounded-lg bg-neutral-900 text-white py-2 text-sm font-medium hover:bg-neutral-700 disabled:opacity-50"
-                >
-                  开始拆解
-                </button>
+                <img src={image} alt="原图" className="rounded-lg border border-neutral-200" />
+                <div className="text-xs text-neutral-400 mt-1 text-center">原图（保真基准）</div>
               </div>
             )}
           </div>
         </Section>
 
-        {analysis && (
+        {/* ===== 极简模式 ===== */}
+        {!proMode && image && (
+          <Section step={2} title="一键裂变">
+            <div className="rounded-lg border border-neutral-200 bg-white p-5">
+              <div className="flex items-center gap-4 mb-4">
+                <span className="text-sm text-neutral-500 shrink-0">裂变张数</span>
+                <input
+                  type="range"
+                  min={1}
+                  max={8}
+                  value={count}
+                  onChange={(e) => setCount(Number(e.target.value))}
+                  className="flex-1"
+                  disabled={busy}
+                />
+                <div className="text-2xl font-bold w-12 text-center">{count}</div>
+              </div>
+              <button
+                onClick={runAll}
+                disabled={busy}
+                className="w-full rounded-lg bg-emerald-600 text-white py-3 text-base font-semibold hover:bg-emerald-700 disabled:opacity-50"
+              >
+                🚀 一键裂变 {count} 张
+              </button>
+              <p className="text-xs text-neutral-400 mt-2 text-center">
+                自动完成：拆解 → 裂变 → 逐张出图，全程约 {count}~{count * 3} 分钟
+              </p>
+            </div>
+          </Section>
+        )}
+
+        {/* ===== 专业模式：拆解结果 ===== */}
+        {proMode && analysis && (
           <Section step={2} title="三要素拆解结果">
             <div className="rounded-lg border border-neutral-200 bg-white p-5 space-y-4">
               <Field label="整体印象" value={analysis.overall} />
@@ -271,7 +364,21 @@ export default function Home() {
           </Section>
         )}
 
-        {analysis && (
+        {/* 专业模式：上传后但还没拆解 → 显示开始拆解按钮 */}
+        {proMode && image && !analysis && (
+          <Section step={2} title="开始拆解">
+            <button
+              onClick={analyze}
+              disabled={busy}
+              className="rounded-lg bg-neutral-900 text-white px-5 py-2.5 text-sm font-medium hover:bg-neutral-700 disabled:opacity-50"
+            >
+              拆解三要素
+            </button>
+          </Section>
+        )}
+
+        {/* 专业模式：选裂变方向 */}
+        {proMode && analysis && (
           <Section step={3} title="选择裂变方向">
             <div className="grid md:grid-cols-3 gap-3">
               {(Object.keys(DIRECTION_LABELS) as Direction[]).map((d) => (
@@ -294,7 +401,8 @@ export default function Home() {
           </Section>
         )}
 
-        {analysis && (
+        {/* 专业模式：选张数 + 生成方案 */}
+        {proMode && analysis && (
           <Section step={4} title="选择裂变张数">
             <div className="flex items-center gap-4">
               <input
@@ -304,11 +412,12 @@ export default function Home() {
                 value={count}
                 onChange={(e) => setCount(Number(e.target.value))}
                 className="flex-1"
+                disabled={busy}
               />
               <div className="text-3xl font-bold w-16 text-center">{count}</div>
               <button
-                onClick={expand}
-                disabled={!!loading}
+                onClick={() => expand()}
+                disabled={busy}
                 className="rounded-lg bg-neutral-900 text-white px-5 py-2.5 text-sm font-medium hover:bg-neutral-700 disabled:opacity-50"
               >
                 生成 {count} 个方案
@@ -317,12 +426,84 @@ export default function Home() {
           </Section>
         )}
 
-        {plans && (
+        {/* ===== 极简模式：结果图廊 ===== */}
+        {!proMode && plans && (
+          <Section step={3} title={`裂变结果（${Object.keys(results).length}/${plans.length}）`}>
+            <div className="grid sm:grid-cols-2 gap-5">
+              {plans.map((plan) => (
+                <div key={plan.index} className="rounded-lg border border-neutral-200 bg-white p-3">
+                  <div className="text-sm font-semibold mb-2 truncate" title={plan.title}>
+                    #{plan.index} {plan.title}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={image!} alt="原图" className="rounded border border-neutral-200 w-full" />
+                      <div className="text-[10px] text-neutral-400 text-center mt-1">原图</div>
+                    </div>
+                    <div className="bg-neutral-100 rounded flex items-center justify-center min-h-[140px]">
+                      {results[plan.index] ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={results[plan.index]} alt={`方案 ${plan.index}`} className="rounded w-full" />
+                      ) : (
+                        <span className="text-xs text-neutral-400">{busy ? "排队中…" : "未生成"}</span>
+                      )}
+                    </div>
+                  </div>
+                  {results[plan.index] && (
+                    <div className="flex gap-2 mt-2">
+                      <button
+                        onClick={() => downloadImage(results[plan.index], plan.index)}
+                        className="flex-1 rounded bg-neutral-900 text-white py-1.5 text-xs hover:bg-neutral-700"
+                      >
+                        ⬇ 下载
+                      </button>
+                      <button
+                        onClick={() => generateOne(plan)}
+                        disabled={busy}
+                        className="rounded border border-neutral-300 px-3 py-1.5 text-xs hover:bg-neutral-100 disabled:opacity-50"
+                      >
+                        重出
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+            <details className="mt-5">
+              <summary className="cursor-pointer text-sm text-neutral-500 hover:text-neutral-800">
+                查看分析详情（拆解 + 每张方案文案）
+              </summary>
+              <div className="mt-3 space-y-3">
+                {analysis && (
+                  <div className="rounded-lg border border-neutral-200 bg-white p-4 text-sm space-y-1">
+                    <div><span className="text-neutral-500">公式：</span><span className="font-mono">{analysis.formula}</span></div>
+                    <div><span className="text-neutral-500">成功关键：</span>{analysis.key_success}</div>
+                    {analysis.subject_lock && (
+                      <div><span className="text-neutral-500">🔒 保真锁定：</span>{analysis.subject_lock}</div>
+                    )}
+                  </div>
+                )}
+                {plans.map((p) => (
+                  <div key={p.index} className="rounded-lg border border-neutral-200 bg-white p-4 text-sm space-y-1">
+                    <div className="font-semibold">#{p.index} {p.title}</div>
+                    <Mini label="场景" value={p.scene_desc} />
+                    <Mini label="氛围" value={p.atmosphere} />
+                    {p.text_overlay && <Mini label="文字" value={p.text_overlay} />}
+                  </div>
+                ))}
+              </div>
+            </details>
+          </Section>
+        )}
+
+        {/* ===== 专业模式：方案 & 生图 ===== */}
+        {proMode && plans && (
           <Section step={5} title="裂变方案 & 生图">
             <div className="mb-4 flex justify-end">
               <button
                 onClick={generateAll}
-                disabled={!!loading}
+                disabled={busy}
                 className="rounded-lg bg-emerald-600 text-white px-5 py-2.5 text-sm font-medium hover:bg-emerald-700 disabled:opacity-50"
               >
                 🎨 全部生图
@@ -340,7 +521,7 @@ export default function Home() {
                     </div>
                     <button
                       onClick={() => generateOne(plan)}
-                      disabled={!!loading}
+                      disabled={busy}
                       className="rounded bg-neutral-900 text-white px-3 py-1.5 text-xs hover:bg-neutral-700 disabled:opacity-50"
                     >
                       生成这张
@@ -364,14 +545,18 @@ export default function Home() {
                         />
                       </details>
                     </div>
-                    <div className="bg-neutral-100 rounded-lg flex items-center justify-center min-h-[280px]">
+                    <div className="bg-neutral-100 rounded-lg flex items-center justify-center min-h-[280px] relative">
                       {results[plan.index] ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={results[plan.index]}
-                          alt={`方案 ${plan.index}`}
-                          className="rounded-lg w-full"
-                        />
+                        <div className="w-full">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={results[plan.index]} alt={`方案 ${plan.index}`} className="rounded-lg w-full" />
+                          <button
+                            onClick={() => downloadImage(results[plan.index], plan.index)}
+                            className="absolute top-2 right-2 rounded bg-neutral-900/80 text-white px-2 py-1 text-xs hover:bg-neutral-900"
+                          >
+                            ⬇ 下载
+                          </button>
+                        </div>
                       ) : (
                         <span className="text-xs text-neutral-400">尚未生图</span>
                       )}
@@ -414,7 +599,7 @@ function SettingsPanel({
           label="Base URL"
           value={draft.baseURL}
           onChange={(v) => setDraft({ ...draft, baseURL: v })}
-          placeholder="https://api.evolink.ai"
+          placeholder="https://yunwu.ai"
           hint="中转站根地址，不要带 /v1"
         />
         <Input

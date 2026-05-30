@@ -10,12 +10,31 @@ export type RelayConfig = {
 };
 
 function parseJSON<T>(text: string): T {
-  const cleaned = text
+  let cleaned = text
     .replace(/^```json\s*/i, "")
     .replace(/^```\s*/i, "")
     .replace(/```\s*$/, "")
     .trim();
-  return JSON.parse(cleaned) as T;
+
+  // 抽取真正的 JSON 片段：从第一个 { 或 [ 到最后一个 } 或 ]，丢掉模型可能多写的前后散文
+  const firstObj = cleaned.indexOf("{");
+  const firstArr = cleaned.indexOf("[");
+  const start =
+    firstArr === -1 ? firstObj : firstObj === -1 ? firstArr : Math.min(firstObj, firstArr);
+  const end = Math.max(cleaned.lastIndexOf("}"), cleaned.lastIndexOf("]"));
+  if (start !== -1 && end !== -1 && end > start) {
+    cleaned = cleaned.slice(start, end + 1);
+  }
+
+  // 去掉对象/数组结尾的多余逗号（最常见的非法 JSON 来源）
+  cleaned = cleaned.replace(/,(\s*[}\]])/g, "$1");
+
+  try {
+    return JSON.parse(cleaned) as T;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error(`模型返回的不是合法 JSON（${msg}）。原文片段：\n${cleaned.slice(0, 500)}`);
+  }
 }
 
 async function callClaude(
