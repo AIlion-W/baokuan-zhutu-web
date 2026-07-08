@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import * as relay from "@/lib/relay";
 
 type TriItem = {
@@ -67,10 +67,35 @@ const DEFAULT_SETTINGS: Settings = {
 
 const STORAGE_KEY = "baokuan-zhutu-settings-v6";
 
+const subscribeHydration = () => () => {};
+const getClientSnapshot = () => true;
+const getServerSnapshot = () => false;
+
+function useHydrated() {
+  return useSyncExternalStore(subscribeHydration, getClientSnapshot, getServerSnapshot);
+}
+
+function readStoredSettings(): Settings {
+  if (typeof window === "undefined") return DEFAULT_SETTINGS;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return DEFAULT_SETTINGS;
+    const parsed = JSON.parse(raw) as Partial<Settings>;
+    return { ...DEFAULT_SETTINGS, ...parsed };
+  } catch {
+    return DEFAULT_SETTINGS;
+  }
+}
+
+function shouldOpenSettingsOnLoad() {
+  if (typeof window === "undefined") return false;
+  return !readStoredSettings().apiKey;
+}
+
 export default function Home() {
-  const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [hydrated, setHydrated] = useState(false);
+  const [settings, setSettings] = useState<Settings>(readStoredSettings);
+  const [settingsOpen, setSettingsOpen] = useState(shouldOpenSettingsOnLoad);
+  const hydrated = useHydrated();
 
   const [image, setImage] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
@@ -78,24 +103,9 @@ export default function Home() {
   const [count, setCount] = useState(3);
   const [plans, setPlans] = useState<Plan[] | null>(null);
   const [results, setResults] = useState<Record<number, string>>({});
+  const [promptDirty, setPromptDirty] = useState<Record<number, boolean>>({});
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as Partial<Settings>;
-        setSettings({ ...DEFAULT_SETTINGS, ...parsed });
-        if (!parsed.apiKey) setSettingsOpen(true);
-      } else {
-        setSettingsOpen(true);
-      }
-    } catch {
-      setSettingsOpen(true);
-    }
-    setHydrated(true);
-  }, []);
 
   const saveSettings = (next: Settings) => {
     setSettings(next);
@@ -120,6 +130,7 @@ export default function Home() {
       setAnalysis(null);
       setPlans(null);
       setResults({});
+      setPromptDirty({});
       setError(null);
     };
     reader.readAsDataURL(file);
@@ -145,6 +156,7 @@ export default function Home() {
     setError(null);
     setPlans(null);
     setResults({});
+    setPromptDirty({});
     try {
       const result = (await relay.expand(settings, analysis, direction, count)) as Plan[];
       setPlans(result);
@@ -157,6 +169,9 @@ export default function Home() {
 
   const updatePrompt = (idx: number, val: string) => {
     setPlans((prev) => prev?.map((p) => (p.index === idx ? { ...p, image_prompt: val } : p)) || null);
+    if (results[idx]) {
+      setPromptDirty((prev) => ({ ...prev, [idx]: true }));
+    }
   };
 
   const generateOne = async (plan: Plan) => {
@@ -166,6 +181,7 @@ export default function Home() {
     try {
       const url = await relay.generate(settings, plan.image_prompt, image);
       setResults((prev) => ({ ...prev, [plan.index]: url }));
+      setPromptDirty((prev) => ({ ...prev, [plan.index]: false }));
     } catch (e) {
       setError(`方案 #${plan.index}: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -343,7 +359,7 @@ export default function Home() {
                       disabled={!!loading}
                       className="rounded bg-neutral-900 text-white px-3 py-1.5 text-xs hover:bg-neutral-700 disabled:opacity-50"
                     >
-                      生成这张
+                      {results[plan.index] ? "重新生成" : "生成这张"}
                     </button>
                   </div>
                   <div className="grid md:grid-cols-2 gap-4">
@@ -355,13 +371,18 @@ export default function Home() {
                       {plan.text_overlay && <Mini label="文字" value={plan.text_overlay} />}
                       <details className="pt-2">
                         <summary className="cursor-pointer text-xs text-neutral-500 hover:text-neutral-800">
-                          编辑生图 Prompt
+                          编辑结构化生图提示词
                         </summary>
                         <textarea
                           value={plan.image_prompt}
                           onChange={(e) => updatePrompt(plan.index, e.target.value)}
-                          className="mt-2 w-full h-32 rounded border border-neutral-300 p-2 text-xs font-mono"
+                          className="mt-2 w-full h-48 rounded border border-neutral-300 p-3 text-xs leading-relaxed"
                         />
+                        {promptDirty[plan.index] && (
+                          <div className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                            提示词已修改，请重新生成。当前预览图仍是上一次生成结果。
+                          </div>
+                        )}
                       </details>
                     </div>
                     <div className="bg-neutral-100 rounded-lg flex items-center justify-center min-h-[280px]">
